@@ -84,29 +84,33 @@ export class EncryptedFileView extends MarkdownView {
 	}
 
 	override getViewData(): string {
-		try {
-			if(this.aesCipher) {
-				let [ciphertext, iv, tag] = this.aesCipher.encrypt(this.editor.getValue());
-				
-				const encData = JSON.stringify({
-					iv: iv,
-					tag: tag,
-					ciphertext: ciphertext,
-				});
+		for(let i = 0; i < 5; i++) {
+			try {
+				if(this.aesCipher) {
+					let [ciphertext, iv, tag] = this.aesCipher.encrypt(this.editor.getValue());
+					
+					const encData = JSON.stringify({
+						iv: iv,
+						tag: tag,
+						ciphertext: ciphertext,
+					});
 
-				return encData;
+					return encData;
+				}
+			} catch(e){
+				console.error(e);
+				new Notice(e, 10000);
 			}
-		} catch(e){
-			console.error(e);
-			new Notice(e, 10000);
 		}
+
+		return "ENCRYPTION FAILED";
 	}
 
 	override clear(): void {
 	}
 }
 
-import { App, Editor, MarkdownView, Modal, Plugin } from 'obsidian';
+import { App, Editor, Modal, Plugin } from 'obsidian';
 
 export default class MyPlugin extends Plugin {
 	private aesCipher: any;
