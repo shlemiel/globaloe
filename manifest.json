@@ -1,0 +1,10 @@
+{
+	"id": "globaloe-plugin",
+	"name": "Global Obsidian Encryption Plugin",
+	"version": "0.0.1",
+	"minAppVersion": "0.15.0",
+	"description": "AES256-GCM Encryption for Obsidian",
+	"author": "shlemiel",
+	"authorUrl": "https://github.com/shlemiel/globaloe",
+	"isDesktopOnly": false
+}
