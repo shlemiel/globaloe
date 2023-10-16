@@ -36,9 +36,6 @@ const aes256gcm = (key: any) => {
 };
 
 import { normalizePath, Notice, TFolder, Setting, moment } from "obsidian";
-import { defaultKeymap, indentWithTab } from "@codemirror/commands";
-import { EditorView, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers, rectangularSelection } from '@codemirror/view'
-import { EditorState } from '@codemirror/state';
 import { MarkdownView, TextFileView, WorkspaceLeaf } from 'obsidian';
 
 export const VIEW_TYPE_ENCRYPTED_FILE = "encrypted-file-view";
@@ -68,28 +65,22 @@ export class EncryptedFileView extends MarkdownView {
 
 		if(!clear) {
 			this.shouldUpdate = false;
-			new Notice('Unsupported');
+			new Notice('unsupported: 1 file with multiple tabs');
 			this.leaf.detach();
 			return;
 		}
 
-		if(data != '') {
-			try {
-				let encryptedData = JSON.parse(data);
-				const plaintext = this.aesCipher.decrypt(encryptedData.ciphertext, encryptedData.iv, encryptedData.tag);
+		try {
+			let encryptedData = JSON.parse(data);
+			const plaintext = this.aesCipher.decrypt(encryptedData.ciphertext, encryptedData.iv, encryptedData.tag);
 
-				this.editor.setValue(plaintext);
-				this.shouldUpdate = true;
-			} catch(e) {
-				this.shouldUpdate = false;
-				console.log(e);
-				new Notice('Invalid password / Unsupported file format');
-				this.leaf.detach();
-				return;
-			}
-		} else {
-			this.editor.setValue("");
+			this.editor.setValue(plaintext);
 			this.shouldUpdate = true;
+		} catch(e) {
+			this.shouldUpdate = false;
+			console.log(e);
+			new Notice('decryption failed: invalid password');
+			this.leaf.detach();
 		}
 	}
 
@@ -124,24 +115,26 @@ export default class MyPlugin extends Plugin {
 
 	private createEncryptedNote() {
 		try {
-			const newFilename = moment().format( `YYYYMMDD hhmmss[.aes256]`);
+			const newFilename = moment().format(`YYYYMMDD hhmmss[.aes256]`);
 			
-			let newFileFolder : TFolder;
 			const activeFile = this.app.workspace.getActiveFile();
-
-			if (activeFile != null){
-				newFileFolder = this.app.fileManager.getNewFileParent(activeFile.path);
-			} else {
-				newFileFolder = this.app.fileManager.getNewFileParent('');
-			}
+			let newFileFolder: TFolder = this.app.fileManager.getNewFileParent(activeFile ? activeFile.path : '');
 
 			const newFilepath = normalizePath(newFileFolder.path + "/" + newFilename);
+
+			let [ciphertext, iv, tag] = this.aesCipher.encrypt("");
 			
-			this.app.vault.create(newFilepath,'').then(async f => {
+			const encData = JSON.stringify({
+				iv: iv,
+				tag: tag,
+				ciphertext: ciphertext,
+			});
+
+			this.app.vault.create(newFilepath,encData).then(async f => {
 				const leaf = this.app.workspace.getLeaf(true);
 				await leaf.openFile(f);
-			}).catch(reason => {
-				new Notice(reason);
+			}).catch(e => {
+				new Notice(e);
 			});
 
 		} catch(e) {
@@ -159,7 +152,7 @@ export default class MyPlugin extends Plugin {
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
 		new InputPasswordModal(this.app, async (password) => {
-			const key = await pbkdf2Async(password, '7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388', 100000, 32, 'sha512');
+			const key = await pbkdf2Async(password, '7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388', 1000000, 32, 'sha512');
 			this.aesCipher = aes256gcm(key);
 			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher));
 		}).open();
