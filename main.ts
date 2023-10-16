@@ -66,6 +66,13 @@ export class EncryptedFileView extends MarkdownView {
 	override setViewData(data: string, clear: boolean): void {
 		this.encData = data;
 
+		if(!clear) {
+			this.shouldUpdate = false;
+			new Notice('Unsupported');
+			this.leaf.detach();
+			return;
+		}
+
 		if(data != '') {
 			try {
 				let encryptedData = JSON.parse(data);
