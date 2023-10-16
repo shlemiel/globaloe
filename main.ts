@@ -44,6 +44,8 @@ import { MarkdownView, TextFileView, WorkspaceLeaf } from 'obsidian';
 export const VIEW_TYPE_ENCRYPTED_FILE = "encrypted-file-view";
 
 export class EncryptedFileView extends MarkdownView {
+	private encData: string = "";
+	private shouldUpdate: boolean = false;
 	private aesCipher: any = null;
 	private plaintext: string = '';
 	private editorView: any = null;
@@ -62,29 +64,30 @@ export class EncryptedFileView extends MarkdownView {
 	}
 
 	override setViewData(data: string, clear: boolean): void {
-		if (clear) {
-			if(data != '') {
-				try {
-					let encrypted_data = JSON.parse(data);
-					const plaintext = this.aesCipher.decrypt(encrypted_data.ciphertext, encrypted_data.iv, encrypted_data.tag);
-					this.editor.setValue(plaintext);
-				} catch(e) {
-					this.leaf.detach();
-					new Notice('Invalid password / Unsupported file format');
-					console.log(e);
-					return;
-				}
-			} else {
-				this.editor.setValue("");
+		this.encData = data;
+
+		if(data != '') {
+			try {
+				let encryptedData = JSON.parse(data);
+				const plaintext = this.aesCipher.decrypt(encryptedData.ciphertext, encryptedData.iv, encryptedData.tag);
+
+				this.editor.setValue(plaintext);
+				this.shouldUpdate = true;
+			} catch(e) {
+				this.shouldUpdate = false;
+				console.log(e);
+				new Notice('Invalid password / Unsupported file format');
+				this.leaf.detach();
+				return;
 			}
 		} else {
-			this.leaf.detach();
-			new Notice('Unsupported');
+			this.editor.setValue("");
+			this.shouldUpdate = true;
 		}
 	}
 
 	override getViewData(): string {
-		for(let i = 0; i < 5; i++) {
+		if(this.shouldUpdate) {
 			try {
 				if(this.aesCipher) {
 					let [ciphertext, iv, tag] = this.aesCipher.encrypt(this.editor.getValue());
@@ -103,10 +106,7 @@ export class EncryptedFileView extends MarkdownView {
 			}
 		}
 
-		return "ENCRYPTION FAILED";
-	}
-
-	override clear(): void {
+		return this.encData;
 	}
 }
 
