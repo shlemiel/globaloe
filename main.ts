@@ -44,12 +44,17 @@ export class EncryptedFileView extends MarkdownView {
 	private encData: string = "";
 	private shouldUpdate: boolean = false;
 	private aesCipher: any = null;
-	private plaintext: string = '';
-	private editorView: any = null;
 	
 	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
 		super(leaf);
 		this.aesCipher = aesCipher;
+	}
+
+	onSwitchView(e: any) {
+		super.onSwitchView(e);
+		this.shouldUpdate = false;
+		new Notice('unsupported: mode switch');
+		this.leaf.detach();
 	}
 	
 	canAcceptExtension(extension: string): boolean {
@@ -60,8 +65,16 @@ export class EncryptedFileView extends MarkdownView {
 		return VIEW_TYPE_ENCRYPTED_FILE;
 	}
 
-	override setViewData(data: string, clear: boolean): void {
+	setViewData(data: string, clear: boolean): void {
 		this.encData = data;
+
+
+		if(this.getState().mode != 'source') {
+			this.shouldUpdate = false;
+			new Notice('unsupported: reading mode');
+			this.leaf.detach();
+			return;
+		}
 
 		if(!clear) {
 			this.shouldUpdate = false;
@@ -84,7 +97,7 @@ export class EncryptedFileView extends MarkdownView {
 		}
 	}
 
-	override getViewData(): string {
+	getViewData(): string {
 		if(this.shouldUpdate) {
 			try {
 				if(this.aesCipher) {
@@ -132,6 +145,7 @@ export default class MyPlugin extends Plugin {
 
 			this.app.vault.create(newFilepath,encData).then(async f => {
 				const leaf = this.app.workspace.getLeaf(true);
+
 				await leaf.openFile(f);
 			}).catch(e => {
 				new Notice(e);
