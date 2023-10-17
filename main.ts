@@ -51,7 +51,6 @@ export class EncryptedFileView extends MarkdownView {
 	}
 
 	onSwitchView(e: any) {
-		super.onSwitchView(e);
 		this.shouldUpdate = false;
 		new Notice('unsupported: mode switch');
 		this.leaf.detach();
