@@ -157,7 +157,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 	}
 
 	async onload() {
-		const ribbonIconEl = this.addRibbonIcon('lock', 'new encrypted note', (evt: MouseEvent) => {
+		const ribbonIconEl = this.addRibbonIcon('file-lock-2', 'new encrypted note', (evt: MouseEvent) => {
 			this.createEncryptedNote();
 		});
 		ribbonIconEl.addClass('gme-new-encrypted-note');
