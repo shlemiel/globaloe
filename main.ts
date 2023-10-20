@@ -122,7 +122,7 @@ export class EncryptedFileView extends MarkdownView {
 
 import { App, Editor, Modal, Plugin } from 'obsidian';
 
-export default class MyPlugin extends Plugin {
+export default class GlobalMarkdownEncrypt extends Plugin {
 	private aesCipher: any;
 
 	private createEncryptedNote() {
@@ -160,7 +160,7 @@ export default class MyPlugin extends Plugin {
 		const ribbonIconEl = this.addRibbonIcon('lock', 'new encrypted note', (evt: MouseEvent) => {
 			this.createEncryptedNote();
 		});
-		ribbonIconEl.addClass('globaloe-new-encrypted-note');
+		ribbonIconEl.addClass('gme-new-encrypted-note');
 
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
@@ -198,16 +198,14 @@ class InputPasswordModal extends Modal {
 		pwInputEl.style.width = '100%';
 		pwInputEl.focus();
 
-		const pwChecker = (ev: Event | null) => {
-			ev?.preventDefault();
-
+		const commitPassword = () => {
 			this.password = pwInputEl.value;
 			this.close();
 		}
 
 		pwInputEl.addEventListener('keypress', (event) => {
 			if (event.key === 'Enter') {
-				pwChecker(null);
+				commitPassword();
 			}
 		});
 	}

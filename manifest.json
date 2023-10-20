@@ -1,10 +1,10 @@
 {
-	"id": "globaloe",
-	"name": "Global Obsidian Encryption Plugin",
+	"id": "global-markdown-encrypt",
+	"name": "Global Markdown Encryption",
 	"version": "0.0.1",
 	"minAppVersion": "0.15.0",
-	"description": "AES256-GCM Encryption for Obsidian",
+	"description": "In-memory AES256-GCM Markdown Encryption",
 	"author": "shlemiel",
-	"authorUrl": "https://github.com/shlemiel/globaloe",
-	"isDesktopOnly": false
+	"authorUrl": "https://github.com/shlemiel",
+	"isDesktopOnly": true
 }
