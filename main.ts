@@ -46,16 +46,21 @@ export class EncryptedFileView extends MarkdownView {
 	private aesCipher: any = null;
 	
 	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
+        let origSetViewState = leaf.setViewState;
+        leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
+            if(viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || viewState.state.mode !== 'source' || viewState.state.source !== false) {
+                new Notice('unsupported: reading or unencrypted mode');
+                this.detach();
+                return new Promise((resolve) => { setTimeout(resolve, 0); });
+            } else {
+                return origSetViewState.apply(this, [viewState, eState]);
+            }
+        };
+
 		super(leaf);
 		this.aesCipher = aesCipher;
 	}
 
-	onSwitchView(e: any) {
-		this.shouldUpdate = false;
-		new Notice('unsupported: mode switch');
-		this.leaf.detach();
-	}
-	
 	canAcceptExtension(extension: string): boolean {
 		return extension == 'aes256';
 	}
@@ -66,7 +71,6 @@ export class EncryptedFileView extends MarkdownView {
 
 	setViewData(data: string, clear: boolean): void {
 		this.encData = data;
-
 
 		if(this.getState().mode != 'source') {
 			this.shouldUpdate = false;
@@ -90,7 +94,6 @@ export class EncryptedFileView extends MarkdownView {
 			this.shouldUpdate = true;
 		} catch(e) {
 			this.shouldUpdate = false;
-			console.log(e);
 			new Notice('decryption failed: invalid password');
 			this.leaf.detach();
 		}
@@ -214,6 +217,7 @@ class InputPasswordModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		this.onSubmit(this.password);
+        if(this.password)
+            this.onSubmit(this.password);
 	}
 }
