@@ -36,7 +36,7 @@ const aes256gcm = (key: any) => {
 };
 
 import { normalizePath, Notice, TFolder, Setting, moment } from "obsidian";
-import { MarkdownView, TextFileView, WorkspaceLeaf } from 'obsidian';
+import { ViewState, MarkdownView, TextFileView, WorkspaceLeaf } from 'obsidian';
 
 export const VIEW_TYPE_ENCRYPTED_FILE = "encrypted-file-view";
 
