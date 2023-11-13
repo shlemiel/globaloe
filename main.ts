@@ -48,7 +48,7 @@ export class EncryptedFileView extends MarkdownView {
 	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
         let origSetViewState = leaf.setViewState;
         leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
-            if(viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
+            if((viewState.state.file && viewState.state.file.endsWith(".aes256")) && viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
                 new Notice('unsupported: reading or unencrypted mode');
                 this.detach();
                 return new Promise((resolve) => { setTimeout(resolve, 0); });
