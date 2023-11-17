@@ -12,8 +12,10 @@ function pbkdf2Async(password: string, salt: string, iterations: Number, keylen:
 const aes256gcm = (key: any) => {
   const ALGO = 'aes-256-gcm';
 
-  const encrypt = (str: any) => {
-    const iv = new Buffer(crypto.randomBytes(12), 'utf8');
+  const encrypt = (str: any, origIv: any) => {
+    let iv = new Buffer(crypto.randomBytes(12), 'utf8');
+    if(origIv)
+        iv = Buffer.from(origIv, 'base64');
     const cipher = crypto.createCipheriv(ALGO, key, iv);
 
     let enc = cipher.update(str, 'utf8', 'base64');
@@ -44,13 +46,14 @@ export class EncryptedFileView extends MarkdownView {
 	private encData: string = "";
 	private shouldUpdate: boolean = false;
 	private aesCipher: any = null;
+	private origIv: any = "";
 	
 	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
         let origSetViewState = leaf.setViewState;
         leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
             if((viewState.state.file && viewState.state.file.endsWith(".aes256")) && viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
-                new Notice('unsupported: reading or unencrypted mode');
                 this.detach();
+                new Notice('unsupported: reading or unencrypted mode');
                 return new Promise((resolve) => { setTimeout(resolve, 0); });
             } else {
                 return origSetViewState.apply(this, [viewState, eState]);
@@ -74,28 +77,29 @@ export class EncryptedFileView extends MarkdownView {
 
 		if(this.getState().mode != 'source') {
 			this.shouldUpdate = false;
-			new Notice('unsupported: reading mode');
 			this.leaf.detach();
+			new Notice('unsupported: reading mode');
 			return;
 		}
 
 		if(!clear) {
 			this.shouldUpdate = false;
-			new Notice('unsupported: 1 file with multiple tabs');
 			this.leaf.detach();
+			new Notice('unsupported: 1 file with multiple tabs');
 			return;
 		}
 
 		try {
 			let encryptedData = JSON.parse(data);
 			const plaintext = this.aesCipher.decrypt(encryptedData.ciphertext, encryptedData.iv, encryptedData.tag);
+			this.origIv = encryptedData.iv;
 
 			this.editor.setValue(plaintext);
 			this.shouldUpdate = true;
 		} catch(e) {
 			this.shouldUpdate = false;
-			new Notice('decryption failed: invalid password');
 			this.leaf.detach();
+			new Notice('decryption failed: invalid password');
 		}
 	}
 
@@ -103,7 +107,7 @@ export class EncryptedFileView extends MarkdownView {
 		if(this.shouldUpdate) {
 			try {
 				if(this.aesCipher) {
-					let [ciphertext, iv, tag] = this.aesCipher.encrypt(this.editor.getValue());
+					let [ciphertext, iv, tag] = this.aesCipher.encrypt(this.editor.getValue(), this.origIv);
 					
 					const encData = JSON.stringify({
 						iv: iv,
