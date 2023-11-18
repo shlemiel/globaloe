@@ -1,34 +1,43 @@
-const buffer = require('buffer');
-const crypto = require('crypto');
+const subtle = crypto.subtle;
+const JsCrypto = require('jscrypto');
 
-function pbkdf2Async(password: string, salt: string, iterations: Number, keylen: Number, digest: string) {
-    return new Promise( (res, rej) => {
-        crypto.pbkdf2(password, salt, iterations, keylen, digest, (err: any, key: any) => {
-            err ? rej(err) : res(key);
-        });
-    });
+const b64tou8 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
+
+async function pbkdf2Async(password: string, salt: string, iterations: Number) {
+    const ec = new TextEncoder();
+    const keyMaterial = await subtle.importKey('raw', ec.encode(password), 'PBKDF2', false, ['deriveKey']);
+    const key = await subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-512', salt: ec.encode(salt), iterations: iterations }, keyMaterial, { name: 'AES-GCM', length: 256, }, true, ['encrypt', 'decrypt']);
+    const exported = new JsCrypto.Word32Array(new Uint8Array(await subtle.exportKey("raw", key)));
+    return exported;
 }
 
 const aes256gcm = (key: any) => {
-  const ALGO = 'aes-256-gcm';
-
-  const encrypt = (str: any, origIv: any) => {
-    let iv = new Buffer(crypto.randomBytes(12), 'utf8');
+  const encrypt = (msg: any, origIv: any) => {
+    let iv = crypto.getRandomValues(new Uint8Array(12));
     if(origIv)
-        iv = Buffer.from(origIv, 'base64');
-    const cipher = crypto.createCipheriv(ALGO, key, iv);
+        iv = b64tou8(origIv);
 
-    let enc = cipher.update(str, 'utf8', 'base64');
-    enc += cipher.final('base64');
-    return [enc, iv.toString('base64'), cipher.getAuthTag().toString('base64')];
+    iv = new JsCrypto.Word32Array(iv);
+    msg = JsCrypto.Utf8.parse(msg);
+
+    let encryptedData = JsCrypto.AES.encrypt(msg, key, {iv: iv, mode: JsCrypto.mode.GCM});
+    let ciphertext = encryptedData.cipherText;
+    let authTag = JsCrypto.mode.GCM.mac(JsCrypto.AES, key, iv, JsCrypto.Word32Array([]), ciphertext, 16);
+    let encryptedPayload = encryptedData.toString();
+
+    return [encryptedPayload, JsCrypto.Base64.stringify(iv), JsCrypto.Base64.stringify(authTag)];
   };
 
-  const decrypt = (enc: any, iv: any, authTag: any) => {
-    const decipher = crypto.createDecipheriv(ALGO, key, Buffer.from(iv, 'base64'));
-    decipher.setAuthTag(Buffer.from(authTag, 'base64'));
-    let str = decipher.update(enc, 'base64', 'utf8');
-    str += decipher.final('utf8');
-    return str;
+  const decrypt = (encryptedPayload: any, iv: any, authTag: any) => {
+    iv = JsCrypto.Base64.parse(iv);
+    let decryptedData = JsCrypto.AES.decrypt(encryptedPayload, key, {iv: iv, mode: JsCrypto.mode.GCM});
+
+    let ciphertext = JsCrypto.formatter.OpenSSLFormatter.parse(encryptedPayload).cipherText;
+    if(authTag !== JsCrypto.Base64.stringify(JsCrypto.mode.GCM.mac(JsCrypto.AES, key, iv, JsCrypto.Word32Array([]), ciphertext))) {
+        throw new Error('authentication fail');
+    }
+
+    return JsCrypto.Utf8.stringify(decryptedData);
   };
 
   return {
@@ -172,7 +181,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
 		new InputPasswordModal(this.app, async (password) => {
-			const key = await pbkdf2Async(password, '7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388', 1000000, 32, 'sha512');
+			const key = await pbkdf2Async(password, '7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388', 1000000);
 			this.aesCipher = aes256gcm(key);
 			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher));
 		}).open();
