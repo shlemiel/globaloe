@@ -1,9 +1,9 @@
 const subtle = crypto.subtle;
 const JsCrypto = require('jscrypto');
 
-const b64tou8 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
+const b64tou8 = (x: string) => Uint8Array.from(atob(x), c => c.charCodeAt(0));
 
-async function pbkdf2Async(password: string, salt: string, iterations: Number) {
+async function pbkdf2Async(password: string, salt: string, iterations: number) {
     const ec = new TextEncoder();
     const keyMaterial = await subtle.importKey('raw', ec.encode(password), 'PBKDF2', false, ['deriveKey']);
     const key = await subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-512', salt: ec.encode(salt), iterations: iterations }, keyMaterial, { name: 'AES-GCM', length: 256, }, true, ['encrypt', 'decrypt']);
