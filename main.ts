@@ -57,8 +57,9 @@ export class EncryptedFileView extends MarkdownView {
 	private shouldUpdate: boolean = false;
 	private aesCipher: any = null;
 	private origIv: any = "";
+    private saltValueToStoreWith: string = "";
 	
-	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
+	constructor(leaf: WorkspaceLeaf, aesCipher: any, saltValueToStoreWith: string) {
         let origSetViewState = leaf.setViewState;
         leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
             if(viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
@@ -76,6 +77,7 @@ export class EncryptedFileView extends MarkdownView {
         this.onInternalDataChange = () => {};
 
 		this.aesCipher = aesCipher;
+        this.saltValueToStoreWith = saltValueToStoreWith;
 	}
 
 	canAcceptExtension(extension: string): boolean {
@@ -127,6 +129,7 @@ export class EncryptedFileView extends MarkdownView {
 						iv: iv,
 						tag: tag,
 						ciphertext: ciphertext,
+                        salt: this.saltValueToStoreWith,
 					});
 
 					return encData;
@@ -143,8 +146,17 @@ export class EncryptedFileView extends MarkdownView {
 
 import { App, Editor, Modal, Plugin } from 'obsidian';
 
+interface GlobalMarkdownEncryptSettings {
+    saltValue: string;
+}
+
+const DEFAULT_SETTINGS: Partial<GlobalMarkdownEncryptSettings> = {
+    saltValue: DEFAULT_SALT_VALUE
+};
+
 export default class GlobalMarkdownEncrypt extends Plugin {
 	private aesCipher: any;
+    private settings: GlobalMarkdownEncryptSettings;
 
 	private createEncryptedNote() {
 		try {
@@ -161,6 +173,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 				iv: iv,
 				tag: tag,
 				ciphertext: ciphertext,
+                salt: this.settings.saltValue,
 			});
 
 			this.app.vault.create(newFilepath,encData).then(async f => {
@@ -178,6 +191,9 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 	}
 
 	async onload() {
+        await this.loadSettings();
+        this.addSettingTab(new GlobalMarkdownEncryptSettingTab(this.app, this));
+
 		const ribbonIconEl = this.addRibbonIcon('file-lock-2', 'new encrypted note', (evt: MouseEvent) => {
 			this.createEncryptedNote();
 		});
@@ -186,15 +202,53 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
 		new InputPasswordModal(this.app, async (password) => {
-			const key = await pbkdf2Async(password, DEFAULT_SALT_VALUE, 1000000);
+			const key = await pbkdf2Async(password, this.settings.saltValue, 1000000);
 			this.aesCipher = aes256gcm(key);
-			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher));
+			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher, this.settings.saltValue));
 		}).open();
 	}
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings(newSettings) {
+        await this.saveData(newSettings);
+    }
 
 	onunload() {
 
 	}
+}
+
+import { App, PluginSettingTab, Setting } from "obsidian";
+
+export class GlobalMarkdownEncryptSettingTab extends PluginSettingTab {
+  plugin: GlobalMarkdownEncrypt;
+
+  constructor(app: App, plugin: GlobalMarkdownEncrypt) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    let { containerEl } = this;
+
+    containerEl.empty();
+
+    new Setting(containerEl)
+      .setName("Salt for PBKDF2: restart to take effect")
+      .setDesc("WARNING: ALL PREVIOUS DATA IS TEMPORARILY NOT AVAILABLE, IF CHANGED. RECOMMENDED TO CHANGE THIS VALUE TO A STRONG RANDOM VALUE. (to restore the default value, uninstall and reinstall this plugin.)")
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.saltValue)
+          .onChange(async (value) => {
+            let newSettings = this.plugin.settings;
+            newSettings.saltValue = value;
+            await this.plugin.saveSettings(newSettings);
+          })
+      );
+  }
 }
 
 class InputPasswordModal extends Modal {
