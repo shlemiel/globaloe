@@ -50,6 +50,7 @@ import { normalizePath, Notice, TFolder, Setting, moment } from "obsidian";
 import { ViewState, MarkdownView, TextFileView, WorkspaceLeaf } from 'obsidian';
 
 export const VIEW_TYPE_ENCRYPTED_FILE = "encrypted-file-view";
+export const DEFAULT_SALT_VALUE = "7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388";
 
 export class EncryptedFileView extends MarkdownView {
 	private encData: string = "";
@@ -60,7 +61,7 @@ export class EncryptedFileView extends MarkdownView {
 	constructor(leaf: WorkspaceLeaf, aesCipher: any) {
         let origSetViewState = leaf.setViewState;
         leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
-            if((viewState.state.file && viewState.state.file.endsWith(".aes256")) && viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
+            if(viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
                 this.detach();
                 new Notice('unsupported: reading or unencrypted mode');
                 return new Promise((resolve) => { setTimeout(resolve, 0); });
@@ -70,6 +71,10 @@ export class EncryptedFileView extends MarkdownView {
         };
 
 		super(leaf);
+
+        // prevent data leak to internal data structure, which is at outside of the editor
+        this.onInternalDataChange = () => {};
+
 		this.aesCipher = aesCipher;
 	}
 
@@ -181,7 +186,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
 		new InputPasswordModal(this.app, async (password) => {
-			const key = await pbkdf2Async(password, '7f2ea27bd475702540c5211aed17904202a3ac06b0e87fdd8fcdec960a0fe388', 1000000);
+			const key = await pbkdf2Async(password, DEFAULT_SALT_VALUE, 1000000);
 			this.aesCipher = aes256gcm(key);
 			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher));
 		}).open();
