@@ -73,12 +73,13 @@ export class EncryptedFileView extends MarkdownView {
 
 		super(leaf);
 
-        // prevent data leak to internal data structure, which is at outside of the editor
-        this.onInternalDataChange = () => {};
-
 		this.aesCipher = aesCipher;
         this.saltValueToStoreWith = saltValueToStoreWith;
 	}
+
+    // try to prevent data leak to internal data structure, which is at outside of the editor
+    onInternalDataChange(): void {
+    }
 
 	canAcceptExtension(extension: string): boolean {
 		return extension == 'aes256';
@@ -155,8 +156,8 @@ const DEFAULT_SETTINGS: Partial<GlobalMarkdownEncryptSettings> = {
 };
 
 export default class GlobalMarkdownEncrypt extends Plugin {
+    public settings: GlobalMarkdownEncryptSettings;
 	private aesCipher: any;
-    private settings: GlobalMarkdownEncryptSettings;
 
 	private createEncryptedNote() {
 		try {
@@ -212,7 +213,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     }
 
-    async saveSettings(newSettings) {
+    async saveSettings(newSettings: GlobalMarkdownEncryptSettings) {
         await this.saveData(newSettings);
     }
 
@@ -221,7 +222,7 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 	}
 }
 
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab } from "obsidian";
 
 export class GlobalMarkdownEncryptSettingTab extends PluginSettingTab {
   plugin: GlobalMarkdownEncrypt;
@@ -243,7 +244,7 @@ export class GlobalMarkdownEncryptSettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.saltValue)
           .onChange(async (value) => {
-            let newSettings = this.plugin.settings;
+            let newSettings: GlobalMarkdownEncryptSettings = this.plugin.settings;
             newSettings.saltValue = value;
             await this.plugin.saveSettings(newSettings);
           })
