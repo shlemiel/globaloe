@@ -4,11 +4,14 @@ const JsCrypto = require('jscrypto');
 const b64tou8 = (x: string) => Uint8Array.from(atob(x), c => c.charCodeAt(0));
 
 async function pbkdf2Async(password: string, salt: string, iterations: number) {
+	if(salt.length < 64)
+		salt = [...crypto.getRandomValues(new Uint8Array(32))].map(m=>('0'+m.toString(16)).slice(-2)).join('');
+
     const ec = new TextEncoder();
     const keyMaterial = await subtle.importKey('raw', ec.encode(password), 'PBKDF2', false, ['deriveKey']);
     const key = await subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-512', salt: ec.encode(salt), iterations: iterations }, keyMaterial, { name: 'AES-GCM', length: 256, }, true, ['encrypt', 'decrypt']);
     const exported = new JsCrypto.Word32Array(new Uint8Array(await subtle.exportKey("raw", key)));
-    return exported;
+    return [exported, salt];
 }
 
 const aes256gcm = (key: any) => {
@@ -57,9 +60,10 @@ export class EncryptedFileView extends MarkdownView {
 	private shouldUpdate: boolean = false;
 	private aesCipher: any = null;
 	private origIv: any = "";
-    private saltValueToStoreWith: string = "";
+	private password: any = "";
+	private saltValueToStoreWith: any = "";
 	
-	constructor(leaf: WorkspaceLeaf, aesCipher: any, saltValueToStoreWith: string) {
+	constructor(leaf: WorkspaceLeaf, password: string) {
         let origSetViewState = leaf.setViewState;
         leaf.setViewState = function(viewState: ViewState, eState?: any): Promise<void> {
             if(viewState.type !== VIEW_TYPE_ENCRYPTED_FILE || (viewState.state.mode && viewState.state.mode !== 'source') || (viewState.state.source && viewState.state.source !== false)) {
@@ -73,8 +77,7 @@ export class EncryptedFileView extends MarkdownView {
 
 		super(leaf);
 
-		this.aesCipher = aesCipher;
-        this.saltValueToStoreWith = saltValueToStoreWith;
+		this.password = password;
 	}
 
     // try to prevent data leak to internal data structure, which is at outside of the editor
@@ -89,35 +92,54 @@ export class EncryptedFileView extends MarkdownView {
 		return VIEW_TYPE_ENCRYPTED_FILE;
 	}
 
-	setViewData(data: string, clear: boolean): void {
-		this.encData = data;
-
-		if(this.getState().mode != 'source') {
-			this.shouldUpdate = false;
-			this.leaf.detach();
-			new Notice('unsupported: reading mode');
-			return;
-		}
-
-		if(!clear) {
-			this.shouldUpdate = false;
-			this.leaf.detach();
-			new Notice('unsupported: 1 file with multiple tabs');
-			return;
-		}
-
+    async updateViewData(): Promise<void> {
 		try {
-			let encryptedData = JSON.parse(data);
+			let encryptedData = JSON.parse(this.encData);
+			
+			let origSalt = encryptedData.salt ? encryptedData.salt : DEFAULT_SALT_VALUE;
+			console.log(origSalt);
+			let [key, salt] = await pbkdf2Async(this.password, origSalt, 1000000);
+
+			if(origSalt != salt) {
+				this.leaf.detach();
+				new Notice('decryption failed: invalid salt length');
+
+				return;
+			}
+
+			this.saltValueToStoreWith = salt;
+			this.aesCipher = aes256gcm(key);
+
 			const plaintext = this.aesCipher.decrypt(encryptedData.ciphertext, encryptedData.iv, encryptedData.tag);
 			this.origIv = encryptedData.iv;
 
 			this.editor.setValue(plaintext);
 			this.shouldUpdate = true;
 		} catch(e) {
-			this.shouldUpdate = false;
+			console.log(e);
 			this.leaf.detach();
 			new Notice('decryption failed: invalid password');
 		}
+    }
+
+	setViewData(data: string, clear: boolean): void {
+        this.shouldUpdate = false;
+		this.encData = data;
+
+		if(this.getState().mode != 'source') {
+			this.leaf.detach();
+			new Notice('unsupported: reading mode');
+			return;
+		}
+
+		if(!clear) {
+			this.leaf.detach();
+			new Notice('unsupported: 1 file with multiple tabs');
+			return;
+		}
+
+        this.editor.setValue("info: decrypting...");
+        this.updateViewData();
 	}
 
 	getViewData(): string {
@@ -147,19 +169,10 @@ export class EncryptedFileView extends MarkdownView {
 
 import { App, Editor, Modal, Plugin } from 'obsidian';
 
-interface GlobalMarkdownEncryptSettings {
-    saltValue: string;
-}
-
-const DEFAULT_SETTINGS: Partial<GlobalMarkdownEncryptSettings> = {
-    saltValue: DEFAULT_SALT_VALUE
-};
-
 export default class GlobalMarkdownEncrypt extends Plugin {
-    public settings: GlobalMarkdownEncryptSettings;
-	private aesCipher: any;
+    private password: any = "";
 
-	private createEncryptedNote() {
+	private async createEncryptedNote() {
 		try {
 			const newFilename = moment().format(`YYYYMMDD hhmmss[.aes256]`);
 			
@@ -168,13 +181,15 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 
 			const newFilepath = normalizePath(newFileFolder.path + "/" + newFilename);
 
-			let [ciphertext, iv, tag] = this.aesCipher.encrypt("");
+			let [key, salt] = await pbkdf2Async(this.password, "", 1000000);
+			const aesCipher = aes256gcm(key);
+			let [ciphertext, iv, tag] = aesCipher.encrypt("");
 			
 			const encData = JSON.stringify({
 				iv: iv,
 				tag: tag,
 				ciphertext: ciphertext,
-                salt: this.settings.saltValue,
+                salt: salt,
 			});
 
 			this.app.vault.create(newFilepath,encData).then(async f => {
@@ -192,9 +207,6 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 	}
 
 	async onload() {
-        await this.loadSettings();
-        this.addSettingTab(new GlobalMarkdownEncryptSettingTab(this.app, this));
-
 		const ribbonIconEl = this.addRibbonIcon('file-lock-2', 'new encrypted note', (evt: MouseEvent) => {
 			this.createEncryptedNote();
 		});
@@ -203,53 +215,14 @@ export default class GlobalMarkdownEncrypt extends Plugin {
 		this.registerExtensions(['aes256'], VIEW_TYPE_ENCRYPTED_FILE);
 
 		new InputPasswordModal(this.app, async (password) => {
-			const key = await pbkdf2Async(password, this.settings.saltValue, 1000000);
-			this.aesCipher = aes256gcm(key);
-			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, this.aesCipher, this.settings.saltValue));
+            this.password = password;
+			this.registerView(VIEW_TYPE_ENCRYPTED_FILE, (leaf) => new EncryptedFileView(leaf, password));
 		}).open();
 	}
-
-    async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    }
-
-    async saveSettings(newSettings: GlobalMarkdownEncryptSettings) {
-        await this.saveData(newSettings);
-    }
 
 	onunload() {
 
 	}
-}
-
-import { PluginSettingTab } from "obsidian";
-
-export class GlobalMarkdownEncryptSettingTab extends PluginSettingTab {
-  plugin: GlobalMarkdownEncrypt;
-
-  constructor(app: App, plugin: GlobalMarkdownEncrypt) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-
-  display(): void {
-    let { containerEl } = this;
-
-    containerEl.empty();
-
-    new Setting(containerEl)
-      .setName("Salt for PBKDF2: restart to take effect")
-      .setDesc("WARNING: ALL PREVIOUS DATA IS TEMPORARILY NOT AVAILABLE, IF CHANGED. RECOMMENDED TO CHANGE THIS VALUE TO A STRONG RANDOM VALUE. (to restore the default value, uninstall and reinstall this plugin.)")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.saltValue)
-          .onChange(async (value) => {
-            let newSettings: GlobalMarkdownEncryptSettings = this.plugin.settings;
-            newSettings.saltValue = value;
-            await this.plugin.saveSettings(newSettings);
-          })
-      );
-  }
 }
 
 class InputPasswordModal extends Modal {
